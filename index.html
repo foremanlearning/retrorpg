@@ -22,14 +22,25 @@
 </head>
 <body>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <!-- Load core classes first -->
+    <script src="textureLoader.js"></script>
+    
+    <!-- Then load game components -->
     <script src="spriteGenerator.js"></script>
     <script src="map.js"></script>
     <script src="raycastEngine.js"></script>
     <script src="player.js"></script>
     <script src="inventory.js"></script>
     <script src="game.js"></script>
+    
+    <!-- Initialize game last -->
     <script>
-        // Initialize Input first
+        // Create TextureLoader instance first
+        const textureLoader = new TextureLoader();
+        console.log('[Init] TextureLoader instance created');
+
+        // Initialize Input
         const Input = {
             keys: {}
         };
@@ -42,9 +53,9 @@
             Input.keys[e.key.toLowerCase()] = false;
         });
 
-        // Then create canvas and game
+        // Create game instance
         const canvas = document.getElementById('gameCanvas');
-        const game = new Game(canvas);
+        window.game = new Game(canvas);
     </script>
 </body>
 </html> 

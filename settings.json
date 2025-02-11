@@ -1,12 +1,17 @@
 {
     "graphics": {
         "raycasting": {
-            "rayCount": 800,
-            "rayQuality": "low",
+            "rayCount": 100,
+            "rayQuality": "high",
             "fov": 60,
             "maxDistance": 16,
             "smoothShading": true,
-            "shadowIntensity": 0.7
+            "shadowIntensity": 0.7,
+            "heights": {
+                "wall": 1.85,
+                "floor": 0.1,
+                "ceiling": 0.1
+            }
         },
         "resolution": {
             "width": 800,

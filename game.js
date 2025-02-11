@@ -2,80 +2,168 @@ class Game {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.textureSetNames = [];
-        this.currentTextureSet = null;
-        this.currentTextureData = null;  // Store full texture data
+        this.textureLoader = new TextureLoader();
+        this.visualDebug = false;
+        this.showMap = true;
+        this.isInitialized = false;  // Add initialization flag
         
-        // Load texture sets first
-        fetch('textures/textures.json')
-            .then(response => response.json())
-            .then(data => {
-                this.textureSetNames = data.textures.map(set => set.name);
-                // Randomly select a texture set
-                const randomIndex = Math.floor(Math.random() * data.textures.length);
-                this.currentTextureSet = this.textureSetNames[randomIndex];
-                this.currentTextureData = data.textures[randomIndex];
-            })
-            .catch(error => {
-                console.warn('Failed to load texture sets:', error);
-            });
-        
-        // Load settings first
-        fetch('settings.json')
-            .then(response => response.json())
-            .then(settings => {
-                // Set resolution
-                this.width = settings.graphics.resolution.width;
-                this.height = settings.graphics.resolution.height;
-                
-                // Update canvas size
-                this.canvas.width = this.width;
-                this.canvas.height = this.height;
-                
-                // Initialize game after resolution is set
-                this.initializeGame();
-            })
-            .catch(error => {
-                console.warn('Failed to load settings, using defaults:', error);
-                this.width = 800;
-                this.height = 600;
-                this.canvas.width = this.width;
-                this.canvas.height = this.height;
-                this.initializeGame();
-            });
-
-        this.visualDebug = false;  // Visual debug flag
-        this.showMap = true;      // Map visibility flag
+        // Start loading sequence
+        this.initializeGame();
     }
 
-    initializeGame() {
-        // Game state
-        this.map = new Map(32, 32);
-        // Pass texture data to map generation
-        this.map.generate(this.currentTextureData);
-        
-        // Start player in center of starting room
-        this.player = new Player(2, 2, Math.PI / 2);
-        this.player.game = this;
-        
-        this.spriteManager = new SpriteGenerator();
-        this.inventory = new Inventory();
-        this.raycastEngine = new RaycastEngine(this.map, this.width);
-        this.raycastEngine.player = this.player;
-        
-        // Game loop setup
-        this.lastTime = performance.now();
-        this.frameCount = 0;
-        this.frameTimes = new Array(60).fill(0);
-        this.frameTimeIndex = 0;
-        this.portalActive = false;
-        this.showPortalPrompt = false;
-        
-        // Event handlers
-        this.setupEventHandlers();
-        
-        // Start game loop
-        this.init();
+    async initializeGame() {
+        try {
+            // Show initial loading screen
+            this.showLoadingScreen('Loading settings...');
+
+            // Load settings first
+            const settings = await fetch('settings.json').then(r => r.json());
+            this.width = settings.graphics.resolution.width;
+            this.height = settings.graphics.resolution.height;
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+
+            // Load texture list
+            this.showLoadingScreen('Loading texture list...');
+            const textureData = await fetch('textures/textures.json').then(r => r.json());
+            this.textureSets = textureData.textures;
+            this.textureSetNames = this.textureSets.map(set => set.name);
+            
+            // Select initial random texture set
+            const randomIndex = Math.floor(Math.random() * this.textureSets.length);
+            this.currentTextureSetIndex = randomIndex;
+            this.currentTextureSet = this.textureSetNames[randomIndex];
+            this.currentTextureData = this.textureSets[randomIndex];
+            
+            // Generate map first
+            this.showLoadingScreen('Generating maze...');
+            this.map = new Map(32, 32);
+            this.map.generate(this.currentTextureData);  // Pass only current texture set
+
+            // Collect textures needed for current set
+            this.showLoadingScreen('Collecting texture list...');
+            const neededTextures = new Set();
+            
+            // Add wall textures from current set
+            for (let y = 0; y < this.map.height; y++) {
+                for (let x = 0; x < this.map.width; x++) {
+                    if (this.map.isWall(x, y)) {
+                        const texture = this.map.getWallTexture(x, y);
+                        if (texture) neededTextures.add(texture);
+                    }
+                }
+            }
+            
+            // Add floor and ceiling textures from current set
+            if (this.currentTextureData.floors) {
+                this.currentTextureData.floors.forEach(path => neededTextures.add(path));
+            }
+            if (this.currentTextureData.ceilings) {
+                this.currentTextureData.ceilings.forEach(path => neededTextures.add(path));
+            }
+
+            console.log('Loading textures:', neededTextures);
+
+            // Load all textures synchronously
+            const totalTextures = neededTextures.size;
+            let loadedCount = 0;
+            
+            for (const texturePath of neededTextures) {
+                this.showLoadingScreen(
+                    `Loading texture ${loadedCount + 1}/${totalTextures}: ${texturePath}`,
+                    loadedCount / totalTextures
+                );
+                
+                try {
+                    // Load texture synchronously
+                    const img = new Image();
+                    await new Promise((resolve, reject) => {
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            
+                            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                            this.textureLoader.loadedTextures[texturePath] = {
+                                width: img.width,
+                                height: img.height,
+                                data: imageData.data
+                            };
+                            resolve();
+                        };
+                        img.onerror = () => {
+                            console.error(`Failed to load texture: ${texturePath}`);
+                            resolve(); // Continue loading other textures
+                        };
+                        // Remove leading slash if present
+                        const cleanPath = texturePath.replace(/^\//, '');
+                        img.src = cleanPath;
+                    });
+                } catch (error) {
+                    console.error(`Error loading texture ${texturePath}:`, error);
+                }
+                
+                loadedCount++;
+            }
+
+            // Initialize game components
+            this.showLoadingScreen('Initializing game...', 1);
+            this.player = new Player(2, 2, Math.PI / 2);
+            this.player.game = this;
+            this.spriteManager = new SpriteGenerator();
+            this.inventory = new Inventory();
+            this.raycastEngine = new RaycastEngine(this.map, this.width);
+            this.raycastEngine.player = this.player;
+            this.raycastEngine.textureLoader = this.textureLoader;
+
+            // Setup game state
+            this.lastTime = performance.now();
+            this.frameCount = 0;
+            this.frameTimes = new Array(60).fill(0);
+            this.frameTimeIndex = 0;
+            this.portalActive = false;
+            this.showPortalPrompt = false;
+
+            // Setup event handlers
+            this.setupEventHandlers();
+
+            // Mark as initialized
+            this.isInitialized = true;
+
+            // Start game loop
+            requestAnimationFrame(this.gameLoop.bind(this));
+
+        } catch (error) {
+            console.error('Failed to initialize game:', error);
+            this.showLoadingScreen('Failed to load game!');
+        }
+    }
+
+    showLoadingScreen(message, progress = 0) {
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw message
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '20px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(message, this.canvas.width/2, this.canvas.height/2 - 40);
+
+        // Draw progress bar
+        const barWidth = this.canvas.width * 0.8;
+        const barHeight = 20;
+        const barX = (this.canvas.width - barWidth) / 2;
+        const barY = this.canvas.height/2;
+
+        // Bar border
+        this.ctx.strokeStyle = '#fff';
+        this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+        // Bar fill
+        this.ctx.fillStyle = '#0f0';
+        this.ctx.fillRect(barX, barY, barWidth * progress, barHeight);
     }
 
     setupEventHandlers() {
@@ -127,6 +215,18 @@ class Game {
                 }
             }
         });
+
+        // Add texture set switching with [ and ] keys
+        document.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case '[':
+                    this.switchTextureSet(-1);
+                    break;
+                case ']':
+                    this.switchTextureSet(1);
+                    break;
+            }
+        });
     }
 
     init() {
@@ -168,21 +268,21 @@ class Game {
     }
 
     render(deltaTime) {
+        // Don't render until initialized
+        if (!this.isInitialized) {
+            return;
+        }
+
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.width, this.height);
         
-        // Render sky and floor
         this.renderEnvironment();
+        this.raycastEngine.render(this.ctx, this.visualDebug);
         
-        // Render walls and sprites
-        this.raycastEngine.render(this.ctx, this.visualDebug);  // Pass visual debug flag
-        
-        // Draw portal prompt if player is near
         if (this.showPortalPrompt) {
             this.renderPortalPrompt();
         }
         
-        // Pass deltaTime to renderDebug
         this.renderDebug(deltaTime);
     }
 
@@ -235,7 +335,7 @@ class Game {
             if (fadeFrames >= 30) {
                 clearInterval(transition);
                 // Generate new maze with current texture set
-                this.map.generate(this.currentTextureData);
+                this.map.generate();
                 this.player.x = this.map.startPos.x;
                 this.player.y = this.map.startPos.y;
                 this.portalActive = false;
@@ -389,5 +489,10 @@ class Game {
             this.ctx.fillText(text, textX, textY);
             textY += lineHeight;
         });
+    }
+
+    // Remove texture set switching since we're only loading one set
+    switchTextureSet(direction = 1) {
+        console.warn('Texture set switching disabled - requires loading new textures');
     }
 } 

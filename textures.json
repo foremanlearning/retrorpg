@@ -1,0 +1,72 @@
+{
+    "textures": [
+        {
+            "name": "ancient_brick",
+            "paths": [
+                "textures/ancient_brick/ancient_brick_001_seed_532466.png"
+            ],
+            "floors": [
+                "textures/ancient_brick/floor_001_seed_532466.png"
+            ],
+            "ceilings": [
+                "textures/ancient_brick/ceiling_001_seed_532466.png"
+            ]
+        },
+        {
+            "name": "dungeon_brick",
+            "paths": [
+                "textures/dungeon_brick/dungeon_brick_001_seed_319532.png"
+            ],
+            "floors": [
+                "textures/dungeon_brick/floor_001_seed_319532.png"
+            ],
+            "ceilings": [
+                "textures/dungeon_brick/ceiling_001_seed_319532.png"
+            ]
+        },
+        {
+            "name": "metal",
+            "paths": [
+                "textures/metal/metal_001_seed_586397.png"
+            ],
+            "floors": [
+                "textures/metal/floor_001_seed_586397.png"
+            ],
+            "ceilings": [
+                "textures/metal/ceiling_001_seed_586397.png"
+            ]
+        }
+    ],
+    "floors": [
+        {
+            "name": "metal_floor",
+            "paths": [
+                "/textures/floors/metal_floor_001.png",
+                // ... more floor variants
+            ]
+        },
+        {
+            "name": "stone_floor",
+            "paths": [
+                "/textures/floors/stone_floor_001.png",
+                // ... more floor variants
+            ]
+        }
+    ],
+    "ceilings": [
+        {
+            "name": "metal_ceiling",
+            "paths": [
+                "/textures/ceilings/metal_ceiling_001.png",
+                // ... more ceiling variants
+            ]
+        },
+        {
+            "name": "stone_ceiling",
+            "paths": [
+                "/textures/ceilings/stone_ceiling_001.png",
+                // ... more ceiling variants
+            ]
+        }
+    ]
+} 

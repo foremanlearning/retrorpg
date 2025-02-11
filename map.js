@@ -6,44 +6,60 @@ class Map {
         this.entities = [];
         this.cellSize = 1;
         this.wallTextures = [];  // Store texture references for each wall
+        this.floorTextures = [];  // Store floor textures for passages
+        this.ceilingTextures = []; // Store ceiling textures for passages
         // Add properties to track start and end positions
         this.startPos = { x: 2, y: 2 };  // Center of starting room
         this.endPos = null;
+        
+        // Store current texture set
+        this.currentTextureSet = null;
     }
 
     generate(textureSet = null) {
-        // Initialize grid with walls
-        this.wallTextures = [];  // Reset wall textures
+        // Store texture set
+        this.currentTextureSet = textureSet;
+        
+        console.log('Generating map with texture set:', textureSet?.name);
+        
+        // Initialize arrays
+        this.wallTextures = [];
+        this.floorTextures = [];
+        this.ceilingTextures = [];
         this.grid = [];
         
+        // First, create the basic grid and wall textures
         for (let y = 0; y < this.height; y++) {
             this.grid[y] = [];
             this.wallTextures[y] = [];
+            this.floorTextures[y] = [];
+            this.ceilingTextures[y] = [];
             for (let x = 0; x < this.width; x++) {
-                this.grid[y][x] = 0; // 0 = wall
-                // Assign random texture from set if available
-                if (textureSet && textureSet.paths) {
+                this.grid[y][x] = 0;  // Start with all walls
+                
+                // Initialize wall textures
+                if (textureSet && textureSet.paths && textureSet.paths.length > 0) {
                     const randomIndex = Math.floor(Math.random() * textureSet.paths.length);
                     this.wallTextures[y][x] = textureSet.paths[randomIndex];
                 } else {
                     this.wallTextures[y][x] = null;
-                    if (x === 0 && y === 0) {  // Only log once
-                        console.warn('No texture set available for walls');
-                    }
                 }
+                
+                // Initialize floor and ceiling textures to null
+                this.floorTextures[y][x] = null;
+                this.ceilingTextures[y][x] = null;
             }
         }
 
-        // Create a clear starting room for the player
+        // Create the maze structure
         this.createStartingRoom();
-        
-        // Create maze starting from the edge of the starting room
         this.carvePassage(3, 3);
-        
-        // Place end point before populating entities
         this.placeEndPoint();
         
-        // Add entities after maze generation
+        // Now assign floor and ceiling textures to passages
+        this.assignFloorAndCeilingTextures();
+        
+        // Add entities after generation
         this.populateEntities();
     }
 
@@ -223,11 +239,87 @@ class Map {
         return this.grid[Math.floor(y)][Math.floor(x)];
     }
 
-    // Add method to get wall texture
+    // Remove texture set switching since we're only using one set
+    setTextureSet(newTextureSet) {
+        console.warn('Texture set switching disabled - requires loading new textures');
+    }
+
+    assignFloorAndCeilingTextures() {
+        if (!this.currentTextureSet) return;
+
+        // Create sections of floor/ceiling pairs
+        const sectionSize = 3; // Size of coherent texture sections
+        
+        for (let y = 0; y < this.height; y += sectionSize) {
+            for (let x = 0; x < this.width; x += sectionSize) {
+                // Only assign textures if there's at least one passage in this section
+                let hasPassage = false;
+                for (let dy = 0; dy < sectionSize && y + dy < this.height; dy++) {
+                    for (let dx = 0; dx < sectionSize && x + dx < this.width; dx++) {
+                        if (this.grid[y + dy][x + dx] !== 0) { // If it's not a wall
+                            hasPassage = true;
+                            break;
+                        }
+                    }
+                    if (hasPassage) break;
+                }
+
+                if (hasPassage) {
+                    // Select random floor and ceiling textures for this section
+                    let floorTexture = null;
+                    let ceilingTexture = null;
+
+                    if (this.currentTextureSet.floors?.length > 0) {
+                        floorTexture = this.currentTextureSet.floors[
+                            Math.floor(Math.random() * this.currentTextureSet.floors.length)
+                        ];
+                    }
+
+                    if (this.currentTextureSet.ceilings?.length > 0) {
+                        ceilingTexture = this.currentTextureSet.ceilings[
+                            Math.floor(Math.random() * this.currentTextureSet.ceilings.length)
+                        ];
+                    }
+
+                    // Apply textures to all passages in this section
+                    for (let dy = 0; dy < sectionSize && y + dy < this.height; dy++) {
+                        for (let dx = 0; dx < sectionSize && x + dx < this.width; dx++) {
+                            if (this.grid[y + dy][x + dx] !== 0) { // If it's not a wall
+                                this.floorTextures[y + dy][x + dx] = floorTexture;
+                                this.ceilingTextures[y + dy][x + dx] = ceilingTexture;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     getWallTexture(x, y) {
         if (this.isInBounds(x, y)) {
-            return this.wallTextures[Math.floor(y)][Math.floor(x)];
+            const texture = this.wallTextures[Math.floor(y)][Math.floor(x)];
+            if (!texture) {
+                console.warn(`No texture found at position (${x}, ${y})`);
+            }
+            return texture;
         }
+        console.warn(`Out of bounds texture request at (${x}, ${y})`);
         return null;
+    }
+
+    getFloorTexture(x, y) {
+        if (!this.isInBounds(x, y)) return null;
+        const cellX = Math.floor(x);
+        const cellY = Math.floor(y);
+        // Only return floor texture if this is a passage (not a wall)
+        return this.grid[cellY][cellX] !== 0 ? this.floorTextures[cellY][cellX] : null;
+    }
+
+    getCeilingTexture(x, y) {
+        if (!this.isInBounds(x, y)) return null;
+        const cellX = Math.floor(x);
+        const cellY = Math.floor(y);
+        // Only return ceiling texture if this is a passage (not a wall)
+        return this.grid[cellY][cellX] !== 0 ? this.ceilingTextures[cellY][cellX] : null;
     }
 } 
