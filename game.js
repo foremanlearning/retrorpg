@@ -2,6 +2,23 @@ class Game {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
+        this.textureSetNames = [];
+        this.currentTextureSet = null;
+        this.currentTextureData = null;  // Store full texture data
+        
+        // Load texture sets first
+        fetch('textures/textures.json')
+            .then(response => response.json())
+            .then(data => {
+                this.textureSetNames = data.textures.map(set => set.name);
+                // Randomly select a texture set
+                const randomIndex = Math.floor(Math.random() * data.textures.length);
+                this.currentTextureSet = this.textureSetNames[randomIndex];
+                this.currentTextureData = data.textures[randomIndex];
+            })
+            .catch(error => {
+                console.warn('Failed to load texture sets:', error);
+            });
         
         // Load settings first
         fetch('settings.json')
@@ -26,12 +43,16 @@ class Game {
                 this.canvas.height = this.height;
                 this.initializeGame();
             });
+
+        this.visualDebug = false;  // Visual debug flag
+        this.showMap = true;      // Map visibility flag
     }
 
     initializeGame() {
         // Game state
         this.map = new Map(32, 32);
-        this.map.generate();
+        // Pass texture data to map generation
+        this.map.generate(this.currentTextureData);
         
         // Start player in center of starting room
         this.player = new Player(2, 2, Math.PI / 2);
@@ -90,6 +111,22 @@ class Game {
                 }
             }
         });
+
+        // Add visual debug toggle (Ctrl+V)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey) {
+                switch(e.key.toLowerCase()) {
+                    case 'v':
+                        this.visualDebug = !this.visualDebug;
+                        console.log(`Visual Debug: ${this.visualDebug ? 'ON' : 'OFF'}`);
+                        break;
+                    case 'm':
+                        this.showMap = !this.showMap;
+                        console.log(`Minimap: ${this.showMap ? 'ON' : 'OFF'}`);
+                        break;
+                }
+            }
+        });
     }
 
     init() {
@@ -138,7 +175,7 @@ class Game {
         this.renderEnvironment();
         
         // Render walls and sprites
-        this.raycastEngine.render(this.ctx);
+        this.raycastEngine.render(this.ctx, this.visualDebug);  // Pass visual debug flag
         
         // Draw portal prompt if player is near
         if (this.showPortalPrompt) {
@@ -174,7 +211,6 @@ class Game {
     }
 
     activatePortal() {
-        // Remove the alert and add a transition effect instead
         this.portalActive = true;
         
         // Fade out effect
@@ -196,110 +232,120 @@ class Game {
             fadeFrames++;
             fadeOut();
             
-            if (fadeFrames >= 30) {  // After 30 frames (~0.5 seconds)
+            if (fadeFrames >= 30) {
                 clearInterval(transition);
-                // Generate new maze and reset player
-                this.map.generate();
+                // Generate new maze with current texture set
+                this.map.generate(this.currentTextureData);
                 this.player.x = this.map.startPos.x;
                 this.player.y = this.map.startPos.y;
                 this.portalActive = false;
             }
-        }, 16);  // Run every 16ms (~60fps)
+        }, 16);
     }
 
     renderDebug(deltaTime) {
-        // Draw minimap
-        const cellSize = 8;
-        const mapWidth = this.map.width * cellSize;
-        const mapHeight = this.map.height * cellSize;
-        
-        // Draw background
-        this.ctx.fillStyle = '#000';
-        this.ctx.fillRect(0, 0, mapWidth, mapHeight);
-        
-        // Draw map cells
-        for (let y = 0; y < this.map.height; y++) {
-            for (let x = 0; x < this.map.width; x++) {
-                const cell = this.map.grid[y][x];
-                // Different colors for different cell types
-                switch(cell) {
-                    case 0: // Wall
-                        this.ctx.fillStyle = '#444';
-                        break;
-                    case 1: // Passage
-                        this.ctx.fillStyle = '#888';
-                        break;
-                    case 2: // Start point
-                        this.ctx.fillStyle = '#0f0';
-                        break;
-                    case 3: // End point
-                        this.ctx.fillStyle = '#f00';
-                        break;
+        if (this.showMap) {  // Only render map if enabled
+            // Draw minimap - half size and in upper right
+            const cellSize = 4;  // Reduced from 8 to 4
+            const mapWidth = this.map.width * cellSize;
+            const mapHeight = this.map.height * cellSize;
+            
+            // Position in upper right corner with small padding
+            const mapX = this.width - mapWidth - 10;  // 10px padding from right
+            const mapY = 10;  // 10px padding from top
+            
+            // Draw background
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(mapX, mapY, mapWidth, mapHeight);
+            
+            // Draw map cells
+            for (let y = 0; y < this.map.height; y++) {
+                for (let x = 0; x < this.map.width; x++) {
+                    const cell = this.map.grid[y][x];
+                    switch(cell) {
+                        case 0: this.ctx.fillStyle = '#444'; break;
+                        case 1: this.ctx.fillStyle = '#888'; break;
+                        case 2: this.ctx.fillStyle = '#0f0'; break;
+                        case 3: this.ctx.fillStyle = '#f00'; break;
+                    }
+                    this.ctx.fillRect(
+                        mapX + (x * cellSize), 
+                        mapY + (y * cellSize), 
+                        cellSize - 1, 
+                        cellSize - 1
+                    );
                 }
-                this.ctx.fillRect(
-                    x * cellSize, 
-                    y * cellSize, 
-                    cellSize - 1, 
-                    cellSize - 1
+            }
+            
+            // Draw player - adjusted for new position and size
+            this.ctx.fillStyle = '#00f';
+            this.ctx.beginPath();
+            this.ctx.arc(
+                mapX + (this.player.x * cellSize),
+                mapY + (this.player.y * cellSize),
+                cellSize / 2,
+                0,
+                Math.PI * 2
+            );
+            this.ctx.fill();
+            
+            // Draw player direction
+            this.ctx.strokeStyle = '#ff0';
+            this.ctx.beginPath();
+            this.ctx.moveTo(
+                mapX + (this.player.x * cellSize),
+                mapY + (this.player.y * cellSize)
+            );
+            this.ctx.lineTo(
+                mapX + (this.player.x + Math.cos(this.player.angle)) * cellSize,
+                mapY + (this.player.y + Math.sin(this.player.angle)) * cellSize
+            );
+            this.ctx.stroke();
+            
+            // Portal effect if active
+            if (this.showPortalPrompt) {
+                const portalX = mapX + (this.map.endPos.x * cellSize);
+                const portalY = mapY + (this.map.endPos.y * cellSize);
+                
+                const gradient = this.ctx.createRadialGradient(
+                    portalX, portalY, 0,
+                    portalX, portalY, cellSize * 2
                 );
+                gradient.addColorStop(0, 'rgba(255, 0, 255, 0.5)');
+                gradient.addColorStop(1, 'rgba(255, 0, 255, 0)');
+                
+                this.ctx.fillStyle = gradient;
+                this.ctx.beginPath();
+                this.ctx.arc(portalX, portalY, cellSize * 2, 0, Math.PI * 2);
+                this.ctx.fill();
             }
         }
-        
-        // Draw player
-        this.ctx.fillStyle = '#00f';  // Changed to blue to distinguish from end point
-        this.ctx.beginPath();
-        this.ctx.arc(
-            this.player.x * cellSize,
-            this.player.y * cellSize,
-            cellSize / 2,
-            0,
-            Math.PI * 2
-        );
-        this.ctx.fill();
-        
-        // Draw player direction
-        this.ctx.strokeStyle = '#ff0';
-        this.ctx.beginPath();
-        this.ctx.moveTo(
-            this.player.x * cellSize,
-            this.player.y * cellSize
-        );
-        this.ctx.lineTo(
-            (this.player.x + Math.cos(this.player.angle)) * cellSize,
-            (this.player.y + Math.sin(this.player.angle)) * cellSize
-        );
-        this.ctx.stroke();
-        
-        // Add portal effect in debug view if active
-        if (this.showPortalPrompt) {
-            const portalX = this.map.endPos.x * cellSize;
-            const portalY = this.map.endPos.y * cellSize;
-            
-            // Draw portal glow effect
-            const gradient = this.ctx.createRadialGradient(
-                portalX, portalY, 0,
-                portalX, portalY, cellSize * 2
-            );
-            gradient.addColorStop(0, 'rgba(255, 0, 255, 0.5)');
-            gradient.addColorStop(1, 'rgba(255, 0, 255, 0)');
-            
-            this.ctx.fillStyle = gradient;
-            this.ctx.beginPath();
-            this.ctx.arc(portalX, portalY, cellSize * 2, 0, Math.PI * 2);
-            this.ctx.fill();
-        }
 
-        // Calculate average FPS over last 60 frames
+        // Get debug info
         const avgDelta = this.frameTimes.reduce((a, b) => a + b) / this.frameTimes.length;
         const fps = Math.round(1 / avgDelta);
         const msPerFrame = (avgDelta * 1000).toFixed(2);
         
+        // Get current wall texture
+        const middleRayIndex = Math.floor(this.raycastEngine.rayCount / 2);
+        const middleRay = this.raycastEngine.rays[middleRayIndex];
+        let currentWallTexture = 'none';
+        
+        if (middleRay) {
+            const hitX = this.player.x + Math.cos(middleRay.angle) * middleRay.distance;
+            const hitY = this.player.y + Math.sin(middleRay.angle) * middleRay.distance;
+            const texture = this.map.getWallTexture(hitX, hitY);
+            if (texture) {
+                currentWallTexture = texture.split('\\').pop();
+            }
+        }
+
         // Setup text style
         this.ctx.font = '14px monospace';
         this.ctx.textAlign = 'left';
-        this.ctx.lineWidth = 3;  // Outline thickness
-        this.ctx.strokeStyle = '#000';  // Outline color
-        this.ctx.fillStyle = '#fff';    // Text color
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = '#000';
+        this.ctx.fillStyle = '#fff';
         
         const diagnostics = [
             `FPS: ${fps}`,
@@ -307,18 +353,40 @@ class Game {
             `Raw deltaTime: ${deltaTime}`,
             `Position: (${this.player.x.toFixed(2)}, ${this.player.y.toFixed(2)})`,
             `Angle: ${(this.player.angle * 180 / Math.PI).toFixed(1)}°`,
-            `Wall Distance: ${this.raycastEngine.getWallDistance().toFixed(2)}`
+            `Wall Distance: ${this.raycastEngine.getWallDistance().toFixed(2)}`,
+            `Current Wall Texture: ${currentWallTexture}`,
+            '',
+            'Available Texture Sets:',
+            ...this.textureSetNames.map(name => {
+                if (name === this.currentTextureSet) {
+                    return `  - ${name} ◄ CURRENT`;
+                }
+                return `  - ${name}`;
+            })
         ];
 
-        // Position text in top-right corner with padding
-        const textX = this.width - 250;
+        // Position text in left side with padding
+        const textX = 20;  // 20px from left edge
         let textY = 30;
         const lineHeight = 20;
 
-        // Render each line with outline
+        // Render text
         diagnostics.forEach(text => {
-            this.ctx.strokeText(text, textX, textY);  // Draw outline
-            this.ctx.fillText(text, textX, textY);    // Draw text
+            if (text.includes('◄ CURRENT')) {
+                const metrics = this.ctx.measureText(text);
+                this.ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+                this.ctx.fillRect(
+                    textX - 5, 
+                    textY - 15, 
+                    metrics.width + 10, 
+                    lineHeight
+                );
+            }
+            
+            this.ctx.strokeStyle = '#000';
+            this.ctx.fillStyle = '#fff';
+            this.ctx.strokeText(text, textX, textY);
+            this.ctx.fillText(text, textX, textY);
             textY += lineHeight;
         });
     }

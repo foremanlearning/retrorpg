@@ -126,9 +126,10 @@ class RaycastEngine {
         };
     }
 
-    render(ctx) {
+    render(ctx, visualDebug = false) {
         const stripWidth = Math.ceil(ctx.canvas.width / this.rayCount);
         
+        // Normal wall rendering
         this.rays.forEach((ray, i) => {
             const distance = ray.distance;
             
@@ -139,12 +140,44 @@ class RaycastEngine {
             
             // Add distance shading
             const brightness = Math.max(0, 1 - (distance / this.maxDistance));
-            const shade = ray.side === 1 ? 0.7 : 1; // Darker for Y-side walls
+            const shade = ray.side === 1 ? 0.7 : 1;
             const color = Math.floor(brightness * 255 * shade);
             
             ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
             ctx.fillRect(i * stripWidth, stripY, stripWidth + 1, stripHeight);
+
+            // Visual debug overlay
+            if (visualDebug) {
+                // Draw ray lines
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.1)';  // Red with transparency
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                const startX = this.player.x * 8;  // Scale to match minimap
+                const startY = this.player.y * 8;
+                const endX = startX + Math.cos(ray.angle) * (ray.distance * 8);
+                const endY = startY + Math.sin(ray.angle) * (ray.distance * 8);
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+
+                // Draw strip connections
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.1)';  // Green with transparency
+                ctx.beginPath();
+                ctx.moveTo(endX, endY);
+                ctx.lineTo(i * stripWidth, stripY);
+                ctx.lineTo(i * stripWidth, stripY + stripHeight);
+                ctx.stroke();
+            }
         });
+
+        if (visualDebug) {
+            // Add visual debug info
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = '12px monospace';
+            ctx.fillText(`Rays: ${this.rayCount}`, 10, ctx.canvas.height - 40);
+            ctx.fillText(`FOV: ${(this.fov * 180 / Math.PI).toFixed(1)}°`, 10, ctx.canvas.height - 25);
+            ctx.fillText(`Ray Step: ${(this.fov / this.rayCount).toFixed(4)}rad`, 10, ctx.canvas.height - 10);
+        }
     }
 
     // Get the distance for the ray in the middle of the view

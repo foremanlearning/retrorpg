@@ -2,7 +2,7 @@
     "graphics": {
         "raycasting": {
             "rayCount": 800,
-            "rayQuality": "high",
+            "rayQuality": "low",
             "fov": 60,
             "maxDistance": 16,
             "smoothShading": true,

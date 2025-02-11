@@ -5,17 +5,32 @@ class Map {
         this.grid = [];
         this.entities = [];
         this.cellSize = 1;
+        this.wallTextures = [];  // Store texture references for each wall
         // Add properties to track start and end positions
         this.startPos = { x: 2, y: 2 };  // Center of starting room
         this.endPos = null;
     }
 
-    generate() {
+    generate(textureSet = null) {
         // Initialize grid with walls
+        this.wallTextures = [];  // Reset wall textures
+        this.grid = [];
+        
         for (let y = 0; y < this.height; y++) {
             this.grid[y] = [];
+            this.wallTextures[y] = [];
             for (let x = 0; x < this.width; x++) {
                 this.grid[y][x] = 0; // 0 = wall
+                // Assign random texture from set if available
+                if (textureSet && textureSet.paths) {
+                    const randomIndex = Math.floor(Math.random() * textureSet.paths.length);
+                    this.wallTextures[y][x] = textureSet.paths[randomIndex];
+                } else {
+                    this.wallTextures[y][x] = null;
+                    if (x === 0 && y === 0) {  // Only log once
+                        console.warn('No texture set available for walls');
+                    }
+                }
             }
         }
 
@@ -206,5 +221,13 @@ class Map {
     getCellType(x, y) {
         if (!this.isInBounds(x, y)) return 0;
         return this.grid[Math.floor(y)][Math.floor(x)];
+    }
+
+    // Add method to get wall texture
+    getWallTexture(x, y) {
+        if (this.isInBounds(x, y)) {
+            return this.wallTextures[Math.floor(y)][Math.floor(x)];
+        }
+        return null;
     }
 } 
