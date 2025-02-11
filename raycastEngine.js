@@ -55,6 +55,15 @@ class RaycastEngine {
             });
             
         this.rays = [];
+
+        // Add buffer for image data
+        this.imageBuffer = new ArrayBuffer(screenWidth * 600 * 4);
+        this.imageData = new Uint8ClampedArray(this.imageBuffer);
+        
+        // Precalculate some values
+        this.screenWidthBytes = screenWidth * 4;
+        this.textureSize = 64;
+        this.textureMask = this.textureSize - 1;
     }
 
     update(player) {
@@ -146,142 +155,135 @@ class RaycastEngine {
     }
 
     render(ctx, visualDebug = false) {
-        const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-        const data = imageData.data;
+        // Use our pre-allocated buffer
+        const data = this.imageData;
+        const width = ctx.canvas.width;
+        const height = ctx.canvas.height;
+        
+        // Clear the buffer faster using Uint32Array
+        const buf32 = new Uint32Array(this.imageBuffer);
+        buf32.fill(0);
         
         // Calculate adjusted center point for floor/ceiling
-        const centerY = ctx.canvas.height / 2;
+        const centerY = height / 2;
         const adjustedCenter = centerY + (centerY * this.floorOffset);
         
-        // Render floor and ceiling
-        for (let y = adjustedCenter; y < ctx.canvas.height; y++) {
-            const rayLeft = -this.fov / 2;
-            const rayRight = this.fov / 2;
+        // Precalculate values for floor/ceiling casting
+        const rayLeft = -this.fov / 2;
+        const rayRight = this.fov / 2;
+        const cosPlayerAngle = Math.cos(this.player.angle);
+        const sinPlayerAngle = Math.sin(this.player.angle);
+        
+        // Render floor and ceiling with optimized loop
+        const startY = Math.floor(adjustedCenter);
+        const endY = height;
+        
+        for (let y = startY; y < endY; y++) {
             const p = y - adjustedCenter;
-            const posZ = ctx.canvas.height / 2;
-            const rowDistance = posZ / p;
+            const rowDistance = (height / 2) / p;
             
-            // Calculate ray direction for the row
-            const rayDirX0 = Math.cos(this.player.angle + rayLeft);
-            const rayDirY0 = Math.sin(this.player.angle + rayLeft);
-            const rayDirX1 = Math.cos(this.player.angle + rayRight);
-            const rayDirY1 = Math.sin(this.player.angle + rayRight);
+            // Precalculate ray directions
+            const floorStepX = rowDistance * (Math.cos(this.player.angle + rayRight) - Math.cos(this.player.angle + rayLeft)) / width;
+            const floorStepY = rowDistance * (Math.sin(this.player.angle + rayRight) - Math.sin(this.player.angle + rayLeft)) / width;
+            
+            let floorX = this.player.x + rowDistance * Math.cos(this.player.angle + rayLeft);
+            let floorY = this.player.y + rowDistance * Math.sin(this.player.angle + rayLeft);
 
-            // Floor casting
-            for (let x = 0; x < ctx.canvas.width; x++) {
-                // Calculate floor position
-                const weight = x / ctx.canvas.width;
-                const floorX = this.player.x + rowDistance * (rayDirX0 * (1.0 - weight) + rayDirX1 * weight);
-                const floorY = this.player.y + rowDistance * (rayDirY0 * (1.0 - weight) + rayDirY1 * weight);
-                
+            const rowIdx = y * this.screenWidthBytes;
+            const ceilY = Math.floor(2 * adjustedCenter - y + (centerY * this.ceilingOffset));
+            const ceilIdx = ceilY * this.screenWidthBytes;
+
+            for (let x = 0; x < width; x++) {
                 const cellX = Math.floor(floorX);
                 const cellY = Math.floor(floorY);
+
+                // Fast texture coordinate calculation
+                const tx = ((floorX - cellX) * this.textureSize) & this.textureMask;
+                const ty = ((floorY - cellY) * this.textureSize) & this.textureMask;
 
                 // Get floor and ceiling textures
                 const floorTexture = this.textureLoader.loadedTextures[this.map.getFloorTexture(cellX, cellY)];
                 const ceilingTexture = this.textureLoader.loadedTextures[this.map.getCeilingTexture(cellX, cellY)];
 
-                // Calculate texture coordinates
-                const tx = Math.floor((floorX - cellX) * 64) & 63;
-                const ty = Math.floor((floorY - cellY) * 64) & 63;
-
-                // Calculate pixel indices with adjusted center
-                const floorIndex = ((y * ctx.canvas.width) + x) * 4;
-                const ceilY = Math.floor(2 * adjustedCenter - y + (centerY * this.ceilingOffset));
-                const ceilIndex = ((ceilY * ctx.canvas.width) + x) * 4;
+                const pixelIdx = rowIdx + (x << 2);
+                const brightness = Math.max(0.2, 1.0 - (rowDistance / this.maxDistance));
 
                 // Apply floor texture
                 if (floorTexture) {
-                    const floorPixel = this.textureLoader.getPixel(floorTexture, tx/64, ty/64);
-                    const brightness = Math.max(0.2, 1.0 - (rowDistance / this.maxDistance));
-                    data[floorIndex] = floorPixel.r * brightness;
-                    data[floorIndex + 1] = floorPixel.g * brightness;
-                    data[floorIndex + 2] = floorPixel.b * brightness;
-                    data[floorIndex + 3] = 255;
+                    const pixel = this.textureLoader.getPixel(floorTexture, tx/this.textureSize, ty/this.textureSize);
+                    data[pixelIdx] = pixel.r * brightness;
+                    data[pixelIdx + 1] = pixel.g * brightness;
+                    data[pixelIdx + 2] = pixel.b * brightness;
+                    data[pixelIdx + 3] = 255;
                 }
 
                 // Apply ceiling texture
-                if (ceilingTexture && ceilY >= 0 && ceilY < ctx.canvas.height) {
-                    const ceilPixel = this.textureLoader.getPixel(ceilingTexture, tx/64, ty/64);
-                    const brightness = Math.max(0.2, 1.0 - (rowDistance / this.maxDistance));
-                    data[ceilIndex] = ceilPixel.r * brightness;
-                    data[ceilIndex + 1] = ceilPixel.g * brightness;
-                    data[ceilIndex + 2] = ceilPixel.b * brightness;
-                    data[ceilIndex + 3] = 255;
+                if (ceilingTexture && ceilY >= 0 && ceilY < height) {
+                    const ceilPixelIdx = ceilIdx + (x << 2);
+                    const pixel = this.textureLoader.getPixel(ceilingTexture, tx/this.textureSize, ty/this.textureSize);
+                    data[ceilPixelIdx] = pixel.r * brightness;
+                    data[ceilPixelIdx + 1] = pixel.g * brightness;
+                    data[ceilPixelIdx + 2] = pixel.b * brightness;
+                    data[ceilPixelIdx + 3] = 255;
                 }
+
+                floorX += floorStepX;
+                floorY += floorStepY;
             }
         }
 
-        // Render walls
-        const stripWidth = Math.ceil(ctx.canvas.width / this.rayCount);
+        // Optimize wall rendering
+        const stripWidth = Math.ceil(width / this.rayCount);
         
-        this.rays.forEach((ray, i) => {
+        for (let i = 0; i < this.rayCount; i++) {
+            const ray = this.rays[i];
             const distance = ray.distance;
-            const wallHeight = Math.ceil((ctx.canvas.height / distance) * 0.5 * this.wallHeight);
-            const stripHeight = Math.min(wallHeight, ctx.canvas.height);
+            const wallHeight = Math.ceil((height / distance) * 0.5 * this.wallHeight);
+            const stripHeight = Math.min(wallHeight, height);
             const stripY = Math.floor(adjustedCenter - (stripHeight / 2));
 
-            // Get wall texture
-            const hitX = this.player.x + Math.cos(ray.angle) * ray.distance;
-            const hitY = this.player.y + Math.sin(ray.angle) * ray.distance;
-            const texturePath = this.map.getWallTexture(Math.floor(hitX), Math.floor(hitY));
+            // Skip if wall strip is completely off screen
+            if (stripY + stripHeight < 0 || stripY >= height) continue;
 
-            // Draw textured wall strip
-            if (texturePath && this.textureLoader.loadedTextures[texturePath]) {
-                const texture = this.textureLoader.loadedTextures[texturePath];
+            // Get wall texture
+            const hitX = this.player.x + Math.cos(ray.angle) * distance;
+            const hitY = this.player.y + Math.sin(ray.angle) * distance;
+            const texturePath = this.map.getWallTexture(Math.floor(hitX), Math.floor(hitY));
+            const texture = this.textureLoader.loadedTextures[texturePath];
+
+            if (texture) {
                 const wallX = ray.side === 0 ? 
                     hitY - Math.floor(hitY) : 
                     hitX - Math.floor(hitX);
                 
-                // Apply shading factors
                 const shade = ray.side === 1 ? 0.7 : 1;
                 const brightness = Math.max(0, 1 - (distance / this.maxDistance));
+                const brightShade = brightness * shade;
                 
-                // Draw strip directly to image data
-                for (let y = 0; y <= stripHeight; y++) {
-                    const textureY = y / stripHeight;
-                    const pixel = this.textureLoader.getPixel(texture, wallX, textureY);
+                // Precalculate strip bounds
+                const startY = Math.max(0, stripY);
+                const endY = Math.min(height, stripY + stripHeight);
+                const stripStartX = i * stripWidth;
+                const stripEndX = Math.min(width, stripStartX + stripWidth);
+
+                for (let y = startY; y < endY; y++) {
+                    const textureY = ((y - stripY) * this.textureSize / stripHeight) & this.textureMask;
+                    const pixel = this.textureLoader.getPixel(texture, wallX, textureY/this.textureSize);
                     
-                    // Fill entire strip width
-                    for (let x = 0; x < stripWidth; x++) {
-                        const screenX = i * stripWidth + x;
-                        const screenY = stripY + y;
-                        
-                        // Ensure we don't draw outside the canvas
-                        if (screenY >= 0 && screenY < ctx.canvas.height) {
-                            const dataIndex = (screenY * ctx.canvas.width + screenX) * 4;
-                            
-                            // Set pixel colors with shading
-                            data[dataIndex] = pixel.r * brightness * shade;
-                            data[dataIndex + 1] = pixel.g * brightness * shade;
-                            data[dataIndex + 2] = pixel.b * brightness * shade;
-                            data[dataIndex + 3] = 255;
-                        }
-                    }
-                }
-            } else {
-                // Fallback solid color
-                const brightness = Math.max(0, 1 - (distance / this.maxDistance));
-                const shade = ray.side === 1 ? 0.7 : 1;
-                const color = Math.floor(brightness * 255 * shade);
-                
-                // Fill entire strip width
-                for (let y = 0; y < stripHeight; y++) {
-                    for (let x = 0; x < stripWidth; x++) {
-                        const screenX = i * stripWidth + x;
-                        const screenY = stripY + y;
-                        const dataIndex = (screenY * ctx.canvas.width + screenX) * 4;
-                        
-                        data[dataIndex] = color;     // R
-                        data[dataIndex + 1] = color; // G
-                        data[dataIndex + 2] = color; // B
-                        data[dataIndex + 3] = 255;   // A
+                    const rowStart = y * this.screenWidthBytes;
+                    for (let x = stripStartX; x < stripEndX; x++) {
+                        const idx = rowStart + (x << 2);
+                        data[idx] = pixel.r * brightShade;
+                        data[idx + 1] = pixel.g * brightShade;
+                        data[idx + 2] = pixel.b * brightShade;
+                        data[idx + 3] = 255;
                     }
                 }
             }
-        });
+        }
 
-        // Put the image data back to canvas
+        // Create ImageData only once and reuse the buffer
+        const imageData = new ImageData(data, width, height);
         ctx.putImageData(imageData, 0, 0);
 
         // Draw debug overlay if needed
