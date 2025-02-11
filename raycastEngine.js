@@ -64,6 +64,9 @@ class RaycastEngine {
         this.screenWidthBytes = screenWidth * 4;
         this.textureSize = 64;
         this.textureMask = this.textureSize - 1;
+
+        // Add minimum distance to prevent extreme wall stretching
+        this.minWallDistance = 0.1;
     }
 
     update(player) {
@@ -137,15 +140,18 @@ class RaycastEngine {
                 hitWall = true;
                 // Calculate exact distance to wall
                 if (side === 0) {
-                    distance = (currentX - startX + (1 - stepX) / 2) / rayDirX;
+                    distance = Math.max(this.minWallDistance, (currentX - startX + (1 - stepX) / 2) / rayDirX);
                 } else {
-                    distance = (currentY - startY + (1 - stepY) / 2) / rayDirY;
+                    distance = Math.max(this.minWallDistance, (currentY - startY + (1 - stepY) / 2) / rayDirY);
                 }
             }
         }
 
         // Fix fisheye effect - remove this.player reference
-        const correctedDistance = distance * Math.cos(angle - this.rays[Math.floor(this.rays.length/2)]?.angle || 0);
+        const correctedDistance = Math.max(
+            this.minWallDistance,
+            distance * Math.cos(angle - this.rays[Math.floor(this.rays.length/2)]?.angle || 0)
+        );
         
         return {
             distance: correctedDistance,
@@ -237,8 +243,11 @@ class RaycastEngine {
         
         for (let i = 0; i < this.rayCount; i++) {
             const ray = this.rays[i];
-            const distance = ray.distance;
-            const wallHeight = Math.ceil((height / distance) * 0.5 * this.wallHeight);
+            const distance = Math.max(this.minWallDistance, ray.distance);
+            
+            // Limit wall height based on distance
+            const heightScale = Math.min(10, 0.5 / distance); // Prevent extreme heights
+            const wallHeight = Math.ceil(height * heightScale * this.wallHeight);
             const stripHeight = Math.min(wallHeight, height);
             const stripY = Math.floor(adjustedCenter - (stripHeight / 2));
 
@@ -257,7 +266,7 @@ class RaycastEngine {
                     hitX - Math.floor(hitX);
                 
                 const shade = ray.side === 1 ? 0.7 : 1;
-                const brightness = Math.max(0, 1 - (distance / this.maxDistance));
+                const brightness = Math.max(0.2, 1.0 - (distance / this.maxDistance));
                 const brightShade = brightness * shade;
                 
                 // Precalculate strip bounds

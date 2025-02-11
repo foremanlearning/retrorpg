@@ -38,44 +38,41 @@ class Game {
             // Generate map first
             this.showLoadingScreen('Generating maze...');
             this.map = new Map(32, 32);
-            this.map.generate(this.currentTextureData);  // Pass only current texture set
+            this.map.generate(this.currentTextureData);
 
-            // Collect textures needed for current set
-            this.showLoadingScreen('Collecting texture list...');
+            // Collect only the textures needed for current map
+            this.showLoadingScreen('Analyzing required textures...');
             const neededTextures = new Set();
             
-            // Add wall textures from current set
+            // Scan map for required wall textures
             for (let y = 0; y < this.map.height; y++) {
                 for (let x = 0; x < this.map.width; x++) {
                     if (this.map.isWall(x, y)) {
                         const texture = this.map.getWallTexture(x, y);
                         if (texture) neededTextures.add(texture);
+                    } else {
+                        // For non-wall cells, get floor and ceiling textures
+                        const floorTexture = this.map.getFloorTexture(x, y);
+                        const ceilingTexture = this.map.getCeilingTexture(x, y);
+                        if (floorTexture) neededTextures.add(floorTexture);
+                        if (ceilingTexture) neededTextures.add(ceilingTexture);
                     }
                 }
             }
-            
-            // Add floor and ceiling textures from current set
-            if (this.currentTextureData.floors) {
-                this.currentTextureData.floors.forEach(path => neededTextures.add(path));
-            }
-            if (this.currentTextureData.ceilings) {
-                this.currentTextureData.ceilings.forEach(path => neededTextures.add(path));
-            }
 
-            console.log('Loading textures:', neededTextures);
+            console.log(`Loading ${neededTextures.size} textures for current maze...`);
 
-            // Load all textures synchronously
+            // Load only the needed textures
             const totalTextures = neededTextures.size;
             let loadedCount = 0;
             
             for (const texturePath of neededTextures) {
                 this.showLoadingScreen(
-                    `Loading texture ${loadedCount + 1}/${totalTextures}: ${texturePath}`,
+                    `Loading texture ${loadedCount + 1}/${totalTextures}`,
                     loadedCount / totalTextures
                 );
                 
                 try {
-                    // Load texture synchronously
                     const img = new Image();
                     await new Promise((resolve, reject) => {
                         img.onload = () => {
@@ -97,7 +94,6 @@ class Game {
                             console.error(`Failed to load texture: ${texturePath}`);
                             resolve(); // Continue loading other textures
                         };
-                        // Remove leading slash if present
                         const cleanPath = texturePath.replace(/^\//, '');
                         img.src = cleanPath;
                     });
