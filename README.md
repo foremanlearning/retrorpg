@@ -54,6 +54,33 @@ The game includes multiple texture sets for walls:
 - Tiles
 - Weathered stone
 
+## Configuration
+
+### Ray Casting Settings
+
+The game's visual quality and performance can be adjusted in `settings.json`:
+
+#### Ray Count
+Controls the number of vertical strips used to render the 3D view:
+- `"screen_width"`: One ray per pixel (highest quality, most demanding)
+- Recommended values:
+  - 160: Very chunky, retro look, best performance
+  - 320: Classic Wolfenstein 3D resolution
+  - 400: Good balance of quality/performance
+  - 640: High quality, moderate performance impact
+  - 800: Maximum quality, highest performance impact
+
+Performance Impact:
+- Higher numbers = smoother walls but more calculations
+- Lower numbers = chunkier look but better performance
+- Should be divisible by screen width for even spacing
+
+#### Other Settings
+- `fov`: Field of view in degrees (typical range: 60-90)
+- `maxDistance`: How far the player can see (lower = better performance)
+- `smoothShading`: Enable/disable smooth wall shading
+- `shadowIntensity`: How dark the Y-side walls are (0.0 to 1.0)
+
 ## Getting Started
 
 1. Clone the repository

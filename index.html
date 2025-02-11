@@ -3,10 +3,20 @@
 <head>
     <title>Doom-style Maze RPG</title>
     <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: black;
+        }
         canvas {
             display: block;
-            margin: 0 auto;
-            background: black;
+            max-width: 100vw;
+            max-height: 100vh;
+            object-fit: contain;
         }
     </style>
 </head>
@@ -19,10 +29,7 @@
     <script src="inventory.js"></script>
     <script src="game.js"></script>
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const game = new Game(canvas);
-        
-        // Simple input handler
+        // Initialize Input first
         const Input = {
             keys: {}
         };
@@ -34,6 +41,10 @@
         document.addEventListener('keyup', (e) => {
             Input.keys[e.key.toLowerCase()] = false;
         });
+
+        // Then create canvas and game
+        const canvas = document.getElementById('gameCanvas');
+        const game = new Game(canvas);
     </script>
 </body>
 </html> 

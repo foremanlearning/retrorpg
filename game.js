@@ -2,13 +2,35 @@ class Game {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.width = canvas.width;
-        this.height = canvas.height;
         
+        // Load settings first
+        fetch('settings.json')
+            .then(response => response.json())
+            .then(settings => {
+                // Set resolution
+                this.width = settings.graphics.resolution.width;
+                this.height = settings.graphics.resolution.height;
+                
+                // Update canvas size
+                this.canvas.width = this.width;
+                this.canvas.height = this.height;
+                
+                // Initialize game after resolution is set
+                this.initializeGame();
+            })
+            .catch(error => {
+                console.warn('Failed to load settings, using defaults:', error);
+                this.width = 800;
+                this.height = 600;
+                this.canvas.width = this.width;
+                this.canvas.height = this.height;
+                this.initializeGame();
+            });
+    }
+
+    initializeGame() {
         // Game state
         this.map = new Map(32, 32);
-        
-        // Initialize map before creating player
         this.map.generate();
         
         // Start player in center of starting room
@@ -20,11 +42,22 @@ class Game {
         this.raycastEngine = new RaycastEngine(this.map, this.width);
         this.raycastEngine.player = this.player;
         
-        // Game loop
-        this.lastTime = 0;
+        // Game loop setup
+        this.lastTime = performance.now();
+        this.frameCount = 0;
+        this.frameTimes = new Array(60).fill(0);
+        this.frameTimeIndex = 0;
         this.portalActive = false;
         this.showPortalPrompt = false;
         
+        // Event handlers
+        this.setupEventHandlers();
+        
+        // Start game loop
+        this.init();
+    }
+
+    setupEventHandlers() {
         // Add portal activation handler
         document.addEventListener('keydown', (e) => {
             if (e.key.toLowerCase() === 'e' && this.showPortalPrompt) {
@@ -57,20 +90,23 @@ class Game {
                 }
             }
         });
-        
-        this.init();
     }
 
     init() {
         requestAnimationFrame(this.gameLoop.bind(this));
     }
 
-    gameLoop(timestamp) {
-        const deltaTime = (timestamp - this.lastTime) / 1000;
-        this.lastTime = timestamp;
+    gameLoop() {
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - this.lastTime) / 1000;
+        this.lastTime = currentTime;
+
+        // Store frame time
+        this.frameTimes[this.frameTimeIndex] = deltaTime;
+        this.frameTimeIndex = (this.frameTimeIndex + 1) % this.frameTimes.length;
 
         this.update(deltaTime);
-        this.render();
+        this.render(deltaTime);
 
         requestAnimationFrame(this.gameLoop.bind(this));
     }
@@ -94,7 +130,7 @@ class Game {
         }
     }
 
-    render() {
+    render(deltaTime) {
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.width, this.height);
         
@@ -109,8 +145,8 @@ class Game {
             this.renderPortalPrompt();
         }
         
-        // Add debug visualization
-        this.renderDebug();
+        // Pass deltaTime to renderDebug
+        this.renderDebug(deltaTime);
     }
 
     renderEnvironment() {
@@ -171,7 +207,7 @@ class Game {
         }, 16);  // Run every 16ms (~60fps)
     }
 
-    renderDebug() {
+    renderDebug(deltaTime) {
         // Draw minimap
         const cellSize = 8;
         const mapWidth = this.map.width * cellSize;
@@ -252,5 +288,38 @@ class Game {
             this.ctx.arc(portalX, portalY, cellSize * 2, 0, Math.PI * 2);
             this.ctx.fill();
         }
+
+        // Calculate average FPS over last 60 frames
+        const avgDelta = this.frameTimes.reduce((a, b) => a + b) / this.frameTimes.length;
+        const fps = Math.round(1 / avgDelta);
+        const msPerFrame = (avgDelta * 1000).toFixed(2);
+        
+        // Setup text style
+        this.ctx.font = '14px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.lineWidth = 3;  // Outline thickness
+        this.ctx.strokeStyle = '#000';  // Outline color
+        this.ctx.fillStyle = '#fff';    // Text color
+        
+        const diagnostics = [
+            `FPS: ${fps}`,
+            `Frame Time: ${msPerFrame}ms`,
+            `Raw deltaTime: ${deltaTime}`,
+            `Position: (${this.player.x.toFixed(2)}, ${this.player.y.toFixed(2)})`,
+            `Angle: ${(this.player.angle * 180 / Math.PI).toFixed(1)}°`,
+            `Wall Distance: ${this.raycastEngine.getWallDistance().toFixed(2)}`
+        ];
+
+        // Position text in top-right corner with padding
+        const textX = this.width - 250;
+        let textY = 30;
+        const lineHeight = 20;
+
+        // Render each line with outline
+        diagnostics.forEach(text => {
+            this.ctx.strokeText(text, textX, textY);  // Draw outline
+            this.ctx.fillText(text, textX, textY);    // Draw text
+            textY += lineHeight;
+        });
     }
 } 
