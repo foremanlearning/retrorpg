@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Doom-style Maze RPG</title>
+    <style>
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script src="spriteGenerator.js"></script>
+    <script src="map.js"></script>
+    <script src="raycastEngine.js"></script>
+    <script src="player.js"></script>
+    <script src="inventory.js"></script>
+    <script src="game.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const game = new Game(canvas);
+        
+        // Simple input handler
+        const Input = {
+            keys: {}
+        };
+        
+        document.addEventListener('keydown', (e) => {
+            Input.keys[e.key.toLowerCase()] = true;
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            Input.keys[e.key.toLowerCase()] = false;
+        });
+    </script>
+</body>
+</html> 
